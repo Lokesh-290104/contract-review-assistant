@@ -14,7 +14,6 @@ import pytest
 # Settings are read at import time, so set them before importing the app.
 os.environ.update(
     {
-        "AI_PROVIDER": "fake",
         "EMBED_DIM": "64",
         "SKIP_STARTUP_DB": "1",
         "CLERK_AUTHORIZED_PARTIES": "http://localhost:5173",
@@ -30,6 +29,7 @@ from app import db as app_db  # noqa: E402
 from app import llm, worker  # noqa: E402
 from app.auth import get_key_provider  # noqa: E402
 from app.main import app  # noqa: E402
+from fakes import FakeAI  # noqa: E402
 
 SAMPLES = Path(__file__).resolve().parents[2] / "eval" / "samples"
 
@@ -93,7 +93,7 @@ def make_token(rsa_key):
 
 @pytest.fixture
 def fake_ai():
-    ai = llm.FakeAI(64)
+    ai = FakeAI(64)
     llm.set_ai(ai)
     yield ai
     llm.set_ai(None)

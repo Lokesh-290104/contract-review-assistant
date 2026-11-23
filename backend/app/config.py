@@ -24,9 +24,6 @@ class Settings(BaseSettings):
     embed_dim: int = 2048
     embed_batch_size: int = 32
 
-    # "openrouter" for real calls, "fake" for offline tests and demos without keys.
-    ai_provider: str = "openrouter"
-
     max_upload_mb: int = 20
     review_workers: int = 2
     cors_origins: str = "http://localhost:5173"

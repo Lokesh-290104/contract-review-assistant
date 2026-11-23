@@ -79,7 +79,6 @@ All secrets go in **`.env`** in the repo root. It is git-ignored. Only `.env.exa
 | `CLERK_AUTHORIZED_PARTIES` | backend | token's `azp` must be one of these origins |
 | `OPENROUTER_API_KEY` | backend only | chat + embeddings. It never reaches the browser |
 
-**No keys yet?** Set `AI_PROVIDER=fake` to click through with simple offline keyword answers. Clerk is always required.
 
 ## 3. Run without Docker
 
@@ -121,8 +120,7 @@ network and no accounts. They cover:
 checklist item. The NDA deliberately has no payment, liability-cap or auto-renewal clause, to test honest "not found" answers.
 
 ```bash
-.venv/Scripts/python eval/run_eval.py          # real models, needs OPENROUTER_API_KEY
-.venv/Scripts/python eval/run_eval.py --fake   # offline plumbing check
+.venv/Scripts/python eval/run_eval.py          # needs OPENROUTER_API_KEY in .env
 ```
 
 An item counts as correct only if the status matches **and**, for found items, the verified quote contains the
@@ -183,7 +181,7 @@ Code map (`backend/app/`):
 | `review.py` | pipeline |
 | `chat.py` | streamed chat |
 | `risk.py` | "needs attention" rules |
-| `llm.py` | OpenRouter client with retries, plus the offline fake |
+| `llm.py` | OpenRouter client with retries |
 | `worker.py` | background pool and restart recovery |
 
 Frontend (`frontend/src/`):
@@ -341,10 +339,10 @@ becomes `unclear`.
 ## 13. How I used AI tools
 
 - **Claude Code (Claude Opus 5.5)** as a pair programmer:
-  - turning the brief into a requirements checklist (`docs/REQUIREMENTS.md`);
-  - drafting the plan and an engineering review of it (`docs/PLAN.md`);
+  - turning the brief into a requirements checklist;
+  - drafting the plan and reviewing it;
   - writing most of the first-draft code and tests;
   - running the tests and fixing failures.
 - I reviewed every file, chose the design (clause chunking, hybrid retrieval, backend quote check, 404 for other users'
-  data), tested the app by hand and wrote the walkthrough in `docs/WALKTHROUGH.md` so I can explain each part.
+  data) and tested the app by hand.
 - The app itself uses OpenRouter free models at runtime (see section 5).

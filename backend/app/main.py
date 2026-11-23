@@ -70,11 +70,6 @@ def health() -> dict:
     return {"ok": True}
 
 
-@app.get("/api/checklist")
-def checklist(user: CurrentUser = Depends(current_user)) -> list[dict]:
-    return [{"key": i.key, "label": i.label} for i in CHECKLIST]
-
-
 @app.get("/api/contracts", response_model=list[ContractOut])
 def list_contracts(db: Session = Depends(get_db), user: CurrentUser = Depends(current_user)):
     return db.scalars(

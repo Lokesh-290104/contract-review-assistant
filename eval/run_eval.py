@@ -1,14 +1,12 @@
 """Evaluation: run the real review pipeline on the sample contracts and score it.
 
-    .venv\\Scripts\\python eval\\run_eval.py            # real AI (needs OPENROUTER_API_KEY in .env)
-    .venv\\Scripts\\python eval\\run_eval.py --fake     # offline keyword fake, to check the plumbing
+    .venv\\Scripts\\python eval\\run_eval.py      (needs OPENROUTER_API_KEY in .env)
 
 An item counts as correct when the status matches the expected status AND, for
 "found" items, the verified quote contains the expected phrase. It uses a
 throw-away embedded Postgres, so your real data is never touched.
 """
 
-import argparse
 import json
 import os
 import shutil
@@ -21,11 +19,6 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--fake", action="store_true", help="use the offline fake AI")
-    args = parser.parse_args()
-    if args.fake:
-        os.environ["AI_PROVIDER"] = "fake"
     os.chdir(ROOT / "backend")  # so settings find ../.env
 
     import pgserver
@@ -77,7 +70,7 @@ def main() -> int:
                 report[name][item.key] = {"ok": ok, "expected": want, "status": got.status, "quote": got.quote, "summary": got.summary}
 
         print(f"\nScore: {correct}/{total} items correct ({100 * correct / total:.0f}%)")
-        out = ROOT / "eval" / ("results-fake.json" if args.fake else "results.json")
+        out = ROOT / "eval" / "results.json"
         out.write_text(json.dumps({"score": f"{correct}/{total}", "items": report}, indent=2), encoding="utf-8")
         print(f"Details saved to {out.relative_to(ROOT)}")
         return 0
