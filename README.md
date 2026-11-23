@@ -90,8 +90,8 @@ I built and tested the app on OpenRouter's suggested free models first (eval: 14
 **50 free-model requests per day** per account, and one contract review uses about 10. Testing used up the day's
 limit, which would also block a reviewer or a demo. Gemini's free tier has its own, larger per-model quota (see
 AI Studio → Usage & limits), and `gemini-3.5-flash-lite` answered review prompts in about 1 s. Both providers speak
-the OpenAI-compatible API, so the
-switch is configuration (`llm.PROVIDERS`), and OpenRouter still works with `AI_PROVIDER=openrouter`.
+the OpenAI-compatible API, so the switch is configuration (`llm.PROVIDERS`), and OpenRouter still works with
+`AI_PROVIDER=openrouter`.
 
 Note: on Google's free tier, Google may use prompts to improve its products. That is fine for sample contracts. For
 real client contracts, use a paid tier or another provider.
