@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +25,14 @@ def main() -> int:
 
     db_dir = ROOT / ".localdb"
     db_dir.mkdir(exist_ok=True)
-    server = pgserver.get_server(db_dir, cleanup_mode="stop")
+    try:
+        server = pgserver.get_server(db_dir, cleanup_mode="stop")
+    except subprocess.TimeoutExpired:
+        # After an unclean stop Postgres runs crash recovery, which can take longer than
+        # pgserver's 10-second start timeout. Give it time, then attach to it.
+        print("Postgres is recovering from an unclean stop; waiting 40 seconds...")
+        time.sleep(40)
+        server = pgserver.get_server(db_dir, cleanup_mode="stop")
     exists = server.psql("SELECT 1 FROM pg_database WHERE datname = 'contracts';")
     if "1 row" not in exists:
         server.psql("CREATE DATABASE contracts;")

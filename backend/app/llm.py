@@ -8,6 +8,7 @@ per-minute and per-day limits, so 429/502/503 answers are retried with backoff
 import json
 import time
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from typing import Protocol
 
 import httpx
@@ -77,6 +78,7 @@ class OpenRouterClient:
                 raise AIError("Could not reach the AI service. Check your internet connection.") from exc
             if r.status_code in self.RETRY_STATUSES:
                 last = r
+                _raise_if_daily_limit(r)  # waiting seconds won't help with a per-day limit
                 if attempt + 1 < self.max_tries:
                     self._wait(attempt, r)
                     continue
@@ -112,27 +114,32 @@ class OpenRouterClient:
             vectors.extend(d["embedding"] for d in data)
         return vectors
 
-    def complete(self, messages: list[Message], max_tokens: int = 600) -> str:
-        body = self._post(
-            "/chat/completions",
-            {"model": self.s.chat_model, "messages": messages, "temperature": 0, "max_tokens": max_tokens},
-        )
+    def _chat_payload(self, messages: list[Message], max_tokens: int) -> dict:
+        return {
+            "model": self.s.chat_model,
+            "messages": messages,
+            "temperature": 0,
+            "max_tokens": max_tokens,
+            # The suggested free models "think" before answering. Thinking used up the whole
+            # token budget (empty answers) and delayed the first streamed word, so it is off:
+            # the task is copying a clause, not solving a puzzle.
+            "reasoning": {"enabled": False},
+        }
+
+    def complete(self, messages: list[Message], max_tokens: int = 1000) -> str:
+        body = self._post("/chat/completions", self._chat_payload(messages, max_tokens))
         try:
             return body["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as exc:
             raise AIError("The AI model returned an empty answer.") from exc
 
     def stream(self, messages: list[Message], max_tokens: int = 900) -> Iterator[str]:
-        payload = {
-            "model": self.s.chat_model,
-            "messages": messages,
-            "temperature": 0,
-            "max_tokens": max_tokens,
-            "stream": True,
-        }
+        payload = {**self._chat_payload(messages, max_tokens), "stream": True}
         for attempt in range(self.max_tries):
             with self.http.stream("POST", "/chat/completions", json=payload) as r:
                 if r.status_code in self.RETRY_STATUSES:
+                    r.read()
+                    _raise_if_daily_limit(r)
                     if attempt + 1 < self.max_tries:
                         self._wait(attempt, r)
                         continue
@@ -162,6 +169,20 @@ class OpenRouterClient:
                         if piece:
                             yield piece
                 return
+
+
+def _raise_if_daily_limit(r: httpx.Response) -> None:
+    """OpenRouter free accounts get a fixed number of requests per day. Say so plainly, with the reset time."""
+    if r.status_code != 429 or "per-day" not in r.text:
+        return
+    message = "The free AI model's daily request limit is used up."
+    try:
+        reset_ms = int(r.headers.get("x-ratelimit-reset") or r.json()["error"]["metadata"]["headers"]["X-RateLimit-Reset"])
+        reset = datetime.fromtimestamp(reset_ms / 1000, tz=timezone.utc)
+        message += f" It resets at {reset:%H:%M} UTC. Please try again after that."
+    except (KeyError, TypeError, ValueError):
+        message += " It resets at midnight UTC. Please try again after that."
+    raise RateLimited(message)
 
 
 def _error_text(r: httpx.Response) -> str:

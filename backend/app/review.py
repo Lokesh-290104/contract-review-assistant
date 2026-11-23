@@ -83,7 +83,12 @@ def build_finding(
         f.summary = answer.summary or "(no summary given)"
         if match is None:
             f.status, f.verified = "unclear", False
-            f.note = UNVERIFIED_NOTE if answer.quote.strip() else "The model gave no quote for this item."
+            if answer.quote.strip():
+                shown_quote = " ".join(answer.quote.split())
+                shown_quote = shown_quote if len(shown_quote) <= 300 else shown_quote[:300] + "…"
+                f.note = f'{UNVERIFIED_NOTE} The model quoted: "{shown_quote}"'
+            else:
+                f.note = "The model gave no quote for this item."
         else:
             f.status = answer.status
             f.verified = True

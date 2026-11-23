@@ -67,7 +67,9 @@ def main() -> int:
                 correct += ok
                 mark = "PASS" if ok else "FAIL"
                 print(f"  {mark}  {item.label:<26} expected {want['status']:<9} got {got.status:<9} {(got.quote or '')[:70]!r}")
-                report[name][item.key] = {"ok": ok, "expected": want, "status": got.status, "quote": got.quote, "summary": got.summary}
+                if got.note:
+                    print(f"        note: {got.note}")
+                report[name][item.key] = {"ok": ok, "expected": want, "status": got.status, "quote": got.quote, "summary": got.summary, "note": got.note}
 
         print(f"\nScore: {correct}/{total} items correct ({100 * correct / total:.0f}%)")
         out = ROOT / "eval" / "results.json"

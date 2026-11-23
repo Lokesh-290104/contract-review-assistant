@@ -126,6 +126,15 @@ checklist item. The NDA deliberately has no payment, liability-cap or auto-renew
 An item counts as correct only if the status matches **and**, for found items, the verified quote contains the
 expected phrase. The script prints a PASS/FAIL table and the score, and saves the details to `eval/results.json`.
 
+**Result** with `nvidia/nemotron-3-ultra-550b-a55b:free` and `nvidia/nemotron-3.5-embed-1b:free`: **14 / 16 items correct
+(88%)**. All 3 "not found" items in the NDA were correctly reported as not found. Both misses were `unclear`, not
+wrong answers:
+- once, the model's termination quote did not match the contract word for word, so the quote check marked it unclear;
+- in another run, the governing-law answer was cut off.
+
+The first run scored 5/16. The free model "thinks" before answering, used up its whole token budget on thinking, and
+returned an empty answer. The eval caught this, and the fix (thinking turned off, see section 7) took it to 14/16.
+
 ## 5. Stack and why
 
 | Layer | Choice | Why |
@@ -238,6 +247,9 @@ embeddings there. Embeddings catch unusual wording ("Ending the Agreement" inste
 - It must return `not_found` when nothing covers the item.
 - The quote must be one passage copied character for character, with no "…", and one short summary goes with it.
 - Temperature is 0 and the output is JSON only.
+- The model's "thinking" mode is turned off (`reasoning: {enabled: false}`). Copying a clause needs no long
+  reasoning. With thinking on, the free model spent all its tokens thinking and returned empty answers, and chat took
+  about 40 s before the first word appeared instead of about 5 s.
 
 Each item gets its own call, so a busy model or a bad answer only affects that one item.
 
@@ -327,6 +339,10 @@ becomes `unclear`.
 - Docker Compose is written but I could not run Docker on my build machine. I tested the same stack locally with
   `scripts/run_local.py` (real Postgres + pgvector via pgserver).
 - No schema migrations (tables are created at start-up). With more time I would use Alembic.
+- **OpenRouter free accounts get 50 free-model requests per day** (1,000/day once the account has $10 of credit).
+  One review uses about 10 requests (1–2 embedding batches + 8 checklist calls), and one chat question uses 2. When
+  the daily limit is hit, the app says so with the reset time instead of retrying. With more time I would cut each
+  review to fewer calls by asking about several checklist items per call.
 
 **With more time:**
 - Compare two versions of a contract (bonus 1).

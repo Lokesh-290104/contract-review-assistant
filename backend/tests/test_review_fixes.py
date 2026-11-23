@@ -60,10 +60,39 @@ def test_retries_429_then_succeeds(monkeypatch):
     assert len(calls) == 3
 
 
+def test_thinking_is_turned_off(monkeypatch):
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return chat_ok("{}")
+
+    make_client(handler, monkeypatch).complete([{"role": "user", "content": "x"}])
+    assert sent[0]["reasoning"] == {"enabled": False}
+    assert sent[0]["temperature"] == 0
+
+
 def test_persistent_429_raises_rate_limited(monkeypatch):
     c = make_client(lambda r: httpx.Response(429), monkeypatch)
     with pytest.raises(llm.RateLimited, match="rate-limited"):
         c.complete([{"role": "user", "content": "x"}])
+
+
+def test_daily_limit_fails_fast_with_reset_time(monkeypatch):
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(
+            429,
+            headers={"x-ratelimit-reset": "1795478400000"},
+            json={"error": {"code": 429, "message": "Rate limit exceeded: free-models-per-day."}},
+        )
+
+    c = make_client(handler, monkeypatch)
+    with pytest.raises(llm.RateLimited, match="daily request limit.*00:00 UTC"):
+        c.complete([{"role": "user", "content": "x"}])
+    assert len(calls) == 1  # no pointless retries
 
 
 def test_bad_key_gives_plain_message(monkeypatch):
