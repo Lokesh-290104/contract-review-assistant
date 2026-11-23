@@ -6,6 +6,7 @@ signature with Clerk's public keys (JWKS), check expiry and the authorized party
 never trusted.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -13,6 +14,8 @@ import jwt
 from fastapi import Depends, HTTPException, Request, status
 
 from .config import get_settings
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -28,7 +31,8 @@ class JwksKeyProvider:
     """Fetches and caches Clerk's public signing keys."""
 
     def __init__(self, url: str, secret_key: str = ""):
-        headers = {}
+        # Clerk's API refuses Python's default "Python-urllib" User-Agent with 403, so send our own.
+        headers = {"User-Agent": "contract-review-assistant/1.0"}
         # The Backend API JWKS endpoint needs the secret key; the Frontend API one is public.
         if "api.clerk.com" in url and secret_key:
             headers["Authorization"] = f"Bearer {secret_key}"
@@ -42,6 +46,10 @@ class AuthError(Exception):
     pass
 
 
+class KeysUnavailable(AuthError):
+    """Clerk's signing keys could not be downloaded: a server problem, not the user's."""
+
+
 def verify_token(token: str, keys: KeyProvider, authorized_parties: list[str]) -> CurrentUser:
     try:
         key = keys.signing_key(token)
@@ -52,8 +60,10 @@ def verify_token(token: str, keys: KeyProvider, authorized_parties: list[str]) -
             options={"require": ["exp", "iat", "sub"]},
             leeway=5,
         )
-    except jwt.PyJWKClientError as exc:
-        raise AuthError(f"could not load signing keys: {exc}") from exc
+    except jwt.PyJWKClientConnectionError as exc:
+        raise KeysUnavailable(f"could not load signing keys: {exc}") from exc
+    except jwt.PyJWKClientError as exc:  # e.g. the token's key id is not in Clerk's key set
+        raise AuthError(f"unknown signing key: {exc}") from exc
     except jwt.InvalidTokenError as exc:
         raise AuthError(f"invalid token: {exc}") from exc
 
@@ -85,5 +95,11 @@ def current_user(request: Request, keys: KeyProvider = Depends(get_key_provider)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Please sign in.")
     try:
         return verify_token(token, keys, get_settings().authorized_parties)
+    except KeysUnavailable as exc:
+        log.error("sign-in check failed: %s", exc)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Sign-in cannot be checked right now. Please try again in a minute."
+        ) from exc
     except AuthError as exc:
+        log.warning("rejected token: %s", exc)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Your session is invalid or expired. Please sign in again.") from exc

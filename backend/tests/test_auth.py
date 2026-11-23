@@ -34,3 +34,28 @@ def test_valid_token_works(client, auth):
 
 def test_health_needs_no_token(client):
     assert client.get("/api/health").json() == {"ok": True}
+
+
+def test_key_download_failure_is_503_not_401(client, auth):
+    import jwt as pyjwt
+
+    from app.auth import get_key_provider
+    from app.main import app
+
+    class Broken:
+        def signing_key(self, token):
+            raise pyjwt.PyJWKClientConnectionError("HTTP Error 403: Forbidden")
+
+    app.dependency_overrides[get_key_provider] = lambda: Broken()
+    r = client.get("/api/contracts", headers=auth("user_a"))
+    assert r.status_code == 503
+    assert "cannot be checked" in r.json()["detail"]
+
+
+def test_jwks_client_sends_a_user_agent():
+    from app.auth import JwksKeyProvider
+
+    provider = JwksKeyProvider("https://api.clerk.com/v1/jwks", "sk_test_x")
+    headers = provider._client.headers
+    assert headers["User-Agent"].startswith("contract-review-assistant")
+    assert headers["Authorization"] == "Bearer sk_test_x"
