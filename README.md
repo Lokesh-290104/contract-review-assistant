@@ -98,7 +98,7 @@ Open **http://localhost:5173**. Vite proxies `/api` to the API on port 8000. The
 ## 4. Tests and evaluation
 
 ```bash
-cd backend && ../.venv/Scripts/python -m pytest      # 57 tests, offline
+cd backend && ../.venv/Scripts/python -m pytest      # 67 tests, offline
 cd frontend && npx tsc -b                             # type check
 ```
 
@@ -109,6 +109,7 @@ network and no accounts. They cover:
 - the quote check (exact match, whitespace/quote-mark tolerance, rejected paraphrases and ellipses);
 - retrieval scoring and the risk rules;
 - Clerk token checks (bad signature, expired, wrong `azp`, no token);
+- the OpenRouter client (429 retry, batching, SSE parsing), with the HTTP layer mocked;
 - upload limits and file types;
 - the full review pipeline;
 - a made-up quote turning into `unclear`;

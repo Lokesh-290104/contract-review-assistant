@@ -34,7 +34,8 @@ def detect_type(filename: str, head: bytes) -> str:
 
 
 def _clean(text: str) -> str:
-    text = text.replace("\r\n", "\n").replace("\r", "\n").replace(" ", " ")
+    # Postgres text cannot hold NUL characters, which some PDFs contain.
+    text = text.replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n").replace(" ", " ")
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -75,8 +76,9 @@ def _docx(data: bytes) -> ExtractedText:
 
     try:
         document = docx.Document(io.BytesIO(data))
-    except (PackageNotFoundError, zipfile.BadZipFile, KeyError) as exc:
-        raise ParseError("This DOCX file is damaged and could not be read.") from exc
+    except (PackageNotFoundError, zipfile.BadZipFile, KeyError, ValueError) as exc:
+        # ValueError: a zip that is not a Word file (e.g. a renamed .xlsx).
+        raise ParseError("This DOCX file is damaged or is not a Word document.") from exc
     lines = [p.text for p in document.paragraphs]
     for table in document.tables:
         for row in table.rows:

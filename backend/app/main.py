@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, load_only
 
 from . import worker
@@ -160,10 +160,15 @@ def delete_contract(contract_id: uuid.UUID, db: Session = Depends(get_db), user:
 @app.post("/api/contracts/{contract_id}/review", response_model=ContractOut, status_code=status.HTTP_202_ACCEPTED)
 def rerun_review(contract_id: uuid.UUID, db: Session = Depends(get_db), user: CurrentUser = Depends(current_user)):
     contract = owned_contract(db, user, contract_id)
-    if contract.status == ContractStatus.PROCESSING:
-        raise HTTPException(status.HTTP_409_CONFLICT, "This contract is already being reviewed.")
-    contract.status, contract.error = ContractStatus.PROCESSING, None
+    # One atomic UPDATE, so two quick clicks on Retry can never start two reviews.
+    claimed = db.execute(
+        update(Contract)
+        .where(Contract.id == contract.id, Contract.user_id == user.id, Contract.status != ContractStatus.PROCESSING)
+        .values(status=ContractStatus.PROCESSING, error=None)
+    ).rowcount
     db.commit()
+    if not claimed:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This contract is already being reviewed.")
     worker.submit_review(contract.id, user.id)
     db.refresh(contract)
     return contract

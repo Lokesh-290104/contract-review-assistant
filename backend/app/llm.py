@@ -45,7 +45,7 @@ RATE_LIMIT_MESSAGE = (
 class OpenRouterClient:
     RETRY_STATUSES = {429, 502, 503}
 
-    def __init__(self, settings: Settings, max_tries: int = 3):
+    def __init__(self, settings: Settings, max_tries: int = 4):
         if not settings.openrouter_api_key:
             raise AIError("OPENROUTER_API_KEY is not set. Add it to your .env file.")
         self.s = settings
@@ -67,7 +67,7 @@ class OpenRouterClient:
                 delay = max(delay, float(response.headers.get("retry-after", 0)))
             except ValueError:
                 pass
-        time.sleep(min(delay, 20.0))
+        time.sleep(min(delay, 30.0))
 
     def _post(self, path: str, payload: dict) -> dict:
         last: httpx.Response | None = None
