@@ -303,6 +303,10 @@ Each item gets its own call, so a busy model or a bad answer only affects that o
    are worked out from the match position (page offsets and chunk ranges), not taken from the model.
    **Not found:** the item becomes **`unclear`**, no quote is shown, and a note explains why. In chat, unverified
    quotes are shown as "✗ quote not found in contract".
+5. In chat, the model is told **not** to write section or page numbers itself. In testing it once labelled a
+   Section 7 quote "Section 6", and once added "page 1" to a TXT file that has no pages. The chat shows a
+   **✓ location** button for each verified quote instead, computed the same way as above. Clicking it opens the
+   clause.
 
 A test (`test_made_up_quote_is_marked_unclear`) feeds the pipeline a made-up quote and checks that every item
 becomes `unclear`.
@@ -362,6 +366,12 @@ becomes `unclear`.
 ## 12. Known limitations and what I would improve
 
 **Limitations:**
+- Only quotes are verified, not summaries. A summary can still add a fact from a nearby clause. Example: the NDA's
+  confidentiality summary mentions the 2-year survival period, which is in Section 5, not in the quoted Section 2.
+  The fact is true, but it is not backed by the quote shown. A second check that asks the model to justify each
+  summary claim from the quote would catch this.
+- Free models sometimes send a streamed answer in a few large pieces. The chat reveals received text gradually so
+  it reads smoothly; the backend streams tokens as they arrive.
 - The background work uses an in-process thread pool. A server restart marks running reviews as failed (the user
   presses Retry). A queue such as Redis + RQ/Celery would survive restarts and scale out.
 - Text extraction is plain pypdf, so complex layouts (multi-column pages, tables, headers and footers) can produce

@@ -13,7 +13,17 @@ export default function ClauseViewer({ clauses, highlight }: { clauses: Clause[]
 
   useEffect(() => {
     if (!highlight) return;
-    refs.current.get(highlight.chunkId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const el = refs.current.get(highlight.chunkId);
+    if (!el) return;
+    // Desktop: the contract panel has its own scrollbar, so scroll only the panel and keep the
+    // checklist where it is. Phone: panels are stacked, so scroll the page to the clause.
+    const box = scrollParent(el);
+    if (box) {
+      const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+      box.scrollTo({ top: Math.max(0, top - box.clientHeight / 3), behavior: "smooth" });
+    } else {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }, [highlight]);
 
   if (clauses.length === 0) return <div className="empty small">The contract text appears here once it has been read.</div>;
@@ -43,6 +53,14 @@ export default function ClauseViewer({ clauses, highlight }: { clauses: Clause[]
       })}
     </div>
   );
+}
+
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const overflow = getComputedStyle(p).overflowY;
+    if ((overflow === "auto" || overflow === "scroll") && p.scrollHeight > p.clientHeight) return p;
+  }
+  return null;
 }
 
 function withMark(c: Clause, h: Highlight) {

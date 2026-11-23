@@ -11,7 +11,9 @@ export default function Chat({ contractId, enabled, onJump }: Props) {
   const api = useApi();
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(""); // text received so far
+  const [shown, setShown] = useState(0); // how much of it is on screen
+  const shownRef = useRef(0);
   const [streaming, setStreaming] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +30,26 @@ export default function Chat({ contractId, enabled, onJump }: Props) {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, draft, pendingQuestion]);
+  }, [messages, shown, pendingQuestion]);
+
+  // Some providers send the answer in a few large pieces. Reveal received text a little per
+  // frame so it reads smoothly; the backend still streams the real tokens as they arrive.
+  useEffect(() => {
+    if (shown >= draft.length) return;
+    const t = window.setTimeout(() => {
+      const next = Math.min(draft.length, shown + Math.max(2, Math.ceil((draft.length - shown) / 12)));
+      shownRef.current = next;
+      setShown(next);
+    }, 16);
+    return () => window.clearTimeout(t);
+  }, [draft, shown]);
+
+  function waitForReveal(target: number): Promise<void> {
+    return new Promise((resolve) => {
+      const check = () => (shownRef.current >= target ? resolve() : window.setTimeout(check, 30));
+      check();
+    });
+  }
 
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -38,9 +59,12 @@ export default function Chat({ contractId, enabled, onJump }: Props) {
     setError(null);
     setPendingQuestion(question);
     setDraft("");
+    setShown(0);
+    shownRef.current = 0;
     setStreaming(true);
     abortRef.current = new AbortController();
     let text = "";
+    let answer: ChatMessage | null = null;
     await api.ask(
       contractId,
       question,
@@ -49,15 +73,8 @@ export default function Chat({ contractId, enabled, onJump }: Props) {
           text += t;
           setDraft(text);
         },
-        onDone: (answer) => {
-          const asked: ChatMessage = {
-            id: answer.id - 0.5,
-            role: "user",
-            content: question,
-            citations: null,
-            created_at: answer.created_at,
-          };
-          setMessages((prev) => [...(prev || []), asked, answer]);
+        onDone: (done) => {
+          answer = done;
         },
         onError: (message, rateLimited) => {
           setError(rateLimited ? `⏳ ${message}` : message);
@@ -68,6 +85,18 @@ export default function Chat({ contractId, enabled, onJump }: Props) {
     ).catch((err: Error) => {
       if (err.name !== "AbortError") setError(err.message);
     });
+    if (answer) {
+      const done: ChatMessage = answer;
+      await waitForReveal(text.length); // let the on-screen text catch up first
+      const asked: ChatMessage = {
+        id: done.id - 0.5,
+        role: "user",
+        content: question,
+        citations: null,
+        created_at: done.created_at,
+      };
+      setMessages((prev) => [...(prev || []), asked, done]);
+    }
     setPendingQuestion(null);
     setDraft("");
     setStreaming(false);
@@ -91,8 +120,8 @@ export default function Chat({ contractId, enabled, onJump }: Props) {
           <>
             <div className="bubble user">{pendingQuestion}</div>
             <div className="bubble assistant">
-              {draft || <span className="typing">Reading the contract…</span>}
-              {draft && <span className="cursor" aria-hidden />}
+              {shown > 0 ? draft.slice(0, shown) : <span className="typing">Reading the contract…</span>}
+              {shown > 0 && <span className="cursor" aria-hidden />}
             </div>
           </>
         )}
