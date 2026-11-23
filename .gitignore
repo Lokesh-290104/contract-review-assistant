@@ -8,3 +8,4 @@ frontend/dist/
 eval/results*.json
 *.log
 .DS_Store
+.localdb/
