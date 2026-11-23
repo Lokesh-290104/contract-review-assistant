@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: 5173,
+      strictPort: true, // Clerk only allows this origin, so never silently move to 5174
       proxy: { "/api": { target: apiTarget, changeOrigin: true } },
     },
   };

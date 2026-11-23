@@ -110,6 +110,7 @@ cd frontend && npm install && cd ..
 ```
 
 Open **http://localhost:5173**. Vite proxies `/api` to the API on port 8000. The data is kept in `./.localdb`.
+Press **Ctrl+C** in the same window to stop everything (web app, API and Postgres).
 
 ## 4. Tests and evaluation
 
