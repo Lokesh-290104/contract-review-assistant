@@ -1,5 +1,5 @@
 // Typed API client. Every call attaches the Clerk session token; the backend verifies it.
-import { useAuth } from "@clerk/clerk-react";
+import { useAuth } from "@clerk/react";
 import { useCallback, useMemo } from "react";
 
 export type ContractStatus = "processing" | "reviewed" | "failed";

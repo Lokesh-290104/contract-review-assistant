@@ -167,7 +167,7 @@ What the eval caught along the way:
 | Backend | **Python 3.12 + FastAPI** | Python has the best document tools (pypdf, python-docx). FastAPI gives typed request/response models, validation, dependency injection for auth, and easy streaming responses. |
 | DB | **PostgreSQL 16 + pgvector** | One database for contracts, findings, chat **and** vectors. Scoping vector search to a user is then a plain `WHERE user_id = …`, in the same SQL as everything else. |
 | ORM | SQLAlchemy 2 (sync) + psycopg 3 | Sync code is easier to read and explain. The slow work (parsing, AI calls) runs in a worker pool, not the request thread. |
-| Auth | **Clerk** (`@clerk/clerk-react` + backend JWT check with PyJWT) | Required by the brief. Checking the token by hand with JWKS makes the security path explicit and testable. |
+| Auth | **Clerk** (`@clerk/react` v6 + backend JWT check with PyJWT) | Required by the brief. Checking the token by hand with JWKS makes the security path explicit and testable. |
 | Frontend | **React 18 + TypeScript + Vite** | Fast dev loop, typed API layer, no heavy framework needed for 2 screens. Plain CSS, responsive down to phones. |
 | AI | **Gemini** free tier (default) or **OpenRouter** free models, both through the OpenAI-compatible API | Free. One small client works with both, so the provider and models are `.env` settings. Why Gemini is the default: section 2. |
 | Run | Docker Compose (db, api, web/nginx) | One command. nginx serves the built app and proxies `/api` with buffering off so streaming stays smooth. |

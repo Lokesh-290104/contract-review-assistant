@@ -1,4 +1,4 @@
-import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from "@clerk/clerk-react";
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/react";
 import { useEffect, useState } from "react";
 import ContractList from "./components/ContractList";
 import ContractView from "./components/ContractView";
@@ -24,12 +24,12 @@ export default function App() {
         <a href="#/" className="brand">
           <span className="brand-mark">§</span> Contract Review Assistant
         </a>
-        <SignedIn>
+        <Show when="signed-in">
           <UserButton />
-        </SignedIn>
+        </Show>
       </header>
 
-      <SignedOut>
+      <Show when="signed-out">
         <main className="landing">
           <h1>Check a contract against a fixed checklist.</h1>
           <p>
@@ -46,11 +46,11 @@ export default function App() {
             </SignUpButton>
           </div>
         </main>
-      </SignedOut>
+      </Show>
 
-      <SignedIn>
+      <Show when="signed-in">
         <main className="content">{match ? <ContractView id={match[1]} /> : <ContractList />}</main>
-      </SignedIn>
+      </Show>
     </div>
   );
 }
