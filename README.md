@@ -130,7 +130,9 @@ expected phrase. The script prints a PASS/FAIL table and the score, and saves th
 (88%)**. All 3 "not found" items in the NDA were correctly reported as not found. Both misses were `unclear`, not
 wrong answers:
 - once, the model's termination quote did not match the contract word for word, so the quote check marked it unclear;
-- in another run, the governing-law answer was cut off.
+- in another run, the governing-law answer could not be read as JSON.
+
+Both items passed in the other runs.
 
 The first run scored 5/16. The free model "thinks" before answering, used up its whole token budget on thinking, and
 returned an empty answer. The eval caught this, and the fix (thinking turned off, see section 7) took it to 14/16.
