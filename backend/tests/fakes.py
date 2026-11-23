@@ -17,7 +17,7 @@ _WORD = re.compile(r"[a-z0-9]+")
 
 
 class FakeAI:
-    """Deterministic stand-in used by tests and by `AI_PROVIDER=fake`."""
+    """Deterministic stand-in for the AI service."""
 
     def __init__(self, dim: int, responder=None, streamer=None):
         self.dim = dim
