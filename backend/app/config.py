@@ -16,12 +16,14 @@ class Settings(BaseSettings):
     # Comma-separated list of frontend origins allowed in the token's `azp` claim.
     clerk_authorized_parties: str = "http://localhost:5173"
 
-    # OpenRouter (OpenAI-compatible API)
+    # AI provider. Both speak the OpenAI-compatible API, so only the address, key,
+    # model names and the "thinking off" switch differ (see llm.PROVIDERS).
+    ai_provider: str = "gemini"  # "gemini" or "openrouter"
+    gemini_api_key: str = ""
     openrouter_api_key: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    chat_model: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
-    embed_model: str = "nvidia/nemotron-3.5-embed-1b:free"
-    embed_dim: int = 2048
+    chat_model: str = "gemini-3.5-flash-lite"
+    embed_model: str = "gemini-embedding-001"
+    embed_dim: int = 1536
     embed_batch_size: int = 32
 
     max_upload_mb: int = 20

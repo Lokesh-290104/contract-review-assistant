@@ -18,6 +18,7 @@ os.environ.update(
         "SKIP_STARTUP_DB": "1",
         "CLERK_AUTHORIZED_PARTIES": "http://localhost:5173",
         "OPENROUTER_API_KEY": "",
+        "GEMINI_API_KEY": "",
     }
 )
 

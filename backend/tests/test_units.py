@@ -136,6 +136,34 @@ def test_changed_words_are_rejected():
     assert find_quote(CONTRACT, "Either Party may end this Agreement") is None
 
 
+LIABILITY = (
+    "6.1 Neither Party shall be liable for any indirect damages, including loss of profits.\n"
+    "6.2 Each Party's total liability shall not exceed the fees paid in the twelve (12) months before the claim.\n"
+    "7. GOVERNING LAW\n7.1 This Agreement is governed by the laws of India."
+)
+
+
+def test_quote_that_skips_a_clause_number_is_accepted_with_the_number_shown():
+    model = "Neither Party shall be liable for any indirect damages, including loss of profits. Each Party's total liability shall not exceed the fees paid in the twelve (12) months before the claim."
+    m = find_quote(LIABILITY, model)
+    assert m is not None
+    assert "\n6.2 Each Party" in m.text  # the contract's own text, clause number included
+    assert m.text == LIABILITY[m.start : m.end]
+
+
+def test_stitching_rejects_anything_but_a_clause_number_in_the_gap():
+    # Skips a heading and a clause number: real words are missing, so it is not accepted.
+    model = "Each Party's total liability shall not exceed the fees paid in the twelve (12) months before the claim. This Agreement is governed by the laws of India."
+    assert find_quote(LIABILITY, model) is None
+    # A dropped real word ("a") between sentences is not a clause number.
+    text = "The fee is due monthly. A late fee applies after thirty days."
+    assert find_quote(text, "The fee is due monthly. late fee applies after thirty days.") is None
+    assert find_quote("The fee is due monthly.\n(b) Late fee applies after thirty days.", "The fee is due monthly. Late fee applies after thirty days.") is not None
+    # Sentences in the wrong order are not accepted either.
+    model = "Each Party's total liability shall not exceed the fees paid in the twelve (12) months before the claim. Neither Party shall be liable for any indirect damages, including loss of profits."
+    assert find_quote(LIABILITY, model) is None
+
+
 def test_ellipsis_and_too_short_quotes_are_rejected():
     assert find_quote(CONTRACT, "Either Party may ... written notice") is None
     assert find_quote(CONTRACT, "Either") is None

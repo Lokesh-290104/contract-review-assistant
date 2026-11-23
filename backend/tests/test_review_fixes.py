@@ -36,10 +36,10 @@ def test_zip_that_is_not_word_gives_clear_error():
 
 
 # --- OpenRouter client -------------------------------------------------------
-def make_client(handler, monkeypatch, **overrides) -> llm.OpenRouterClient:
+def make_client(handler, monkeypatch, provider="openrouter", **overrides) -> llm.OpenAICompatClient:
     monkeypatch.setattr(llm.time, "sleep", lambda s: None)
-    s = Settings(openrouter_api_key="test-key", embed_batch_size=2, **overrides)
-    c = llm.OpenRouterClient(s)
+    s = Settings(ai_provider=provider, openrouter_api_key="k", gemini_api_key="k", embed_batch_size=2, **overrides)
+    c = llm.OpenAICompatClient(s)
     c.http = httpx.Client(base_url="https://openrouter.test/api/v1", transport=httpx.MockTransport(handler))
     return c
 
@@ -60,16 +60,42 @@ def test_retries_429_then_succeeds(monkeypatch):
     assert len(calls) == 3
 
 
-def test_thinking_is_turned_off(monkeypatch):
+@pytest.mark.parametrize(
+    "provider,expected",
+    [("openrouter", {"reasoning": {"enabled": False}}), ("gemini", {"reasoning_effort": "low"})],
+)
+def test_thinking_is_turned_off(monkeypatch, provider, expected):
     sent = []
 
     def handler(request):
         sent.append(json.loads(request.content))
         return chat_ok("{}")
 
-    make_client(handler, monkeypatch).complete([{"role": "user", "content": "x"}])
-    assert sent[0]["reasoning"] == {"enabled": False}
+    make_client(handler, monkeypatch, provider).complete([{"role": "user", "content": "x"}])
+    for key, value in expected.items():
+        assert sent[0][key] == value
     assert sent[0]["temperature"] == 0
+
+
+def test_gemini_asks_for_the_configured_vector_size(monkeypatch):
+    sent = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        sent.append(body)
+        return httpx.Response(200, json={"data": [{"index": i, "embedding": [0.0]} for i in range(len(body["input"]))]})
+
+    make_client(handler, monkeypatch, "gemini", embed_dim=1536).embed(["a"])
+    make_client(handler, monkeypatch, "openrouter").embed(["a"])
+    assert sent[0]["dimensions"] == 1536
+    assert "dimensions" not in sent[1]
+
+
+def test_gemini_daily_limit_message(monkeypatch):
+    body = [{"error": {"code": 429, "message": "Quota exceeded for metric: GenerateRequestsPerDayPerProjectPerModel-FreeTier", "status": "RESOURCE_EXHAUSTED"}}]
+    c = make_client(lambda r: httpx.Response(429, json=body), monkeypatch, "gemini")
+    with pytest.raises(llm.RateLimited, match="daily request limit"):
+        c.complete([{"role": "user", "content": "x"}])
 
 
 def test_persistent_429_raises_rate_limited(monkeypatch):
@@ -135,6 +161,12 @@ def test_stream_error_event_mid_answer(monkeypatch):
         list(c.stream([{"role": "user", "content": "x"}]))
 
 
-def test_missing_key_is_a_clear_error():
-    with pytest.raises(llm.AIError, match="OPENROUTER_API_KEY"):
-        llm.OpenRouterClient(Settings(openrouter_api_key=""))
+@pytest.mark.parametrize("provider,name", [("gemini", "GEMINI_API_KEY"), ("openrouter", "OPENROUTER_API_KEY")])
+def test_missing_key_is_a_clear_error(provider, name):
+    with pytest.raises(llm.AIError, match=name):
+        llm.OpenAICompatClient(Settings(ai_provider=provider, gemini_api_key="", openrouter_api_key=""))
+
+
+def test_unknown_provider_is_a_clear_error():
+    with pytest.raises(llm.AIError, match="AI_PROVIDER"):
+        llm.OpenAICompatClient(Settings(ai_provider="nope"))

@@ -72,24 +72,59 @@ def find_quote(full_text: str, quote: str, prefer_ranges: list[tuple[int, int]] 
     if not norm_q:
         return None
 
-    positions: list[int] = []
-    pos = norm_full.find(norm_q)
-    while pos != -1:
-        positions.append(pos)
-        pos = norm_full.find(norm_q, pos + 1)
-    if not positions:
-        return None
-
-    def to_match(p: int) -> QuoteMatch:
+    def to_match(p: int, length: int) -> QuoteMatch:
         start = index[p]
-        end = index[p + len(norm_q) - 1] + 1
+        end = index[p + length - 1] + 1
         return QuoteMatch(start=start, end=end, text=full_text[start:end])
 
-    matches = [to_match(p) for p in positions]
+    matches = [to_match(p, len(norm_q)) for p in _all_positions(norm_full, norm_q)]
+    if not matches:
+        # Models often join two sub-clauses and drop the number between them
+        # ("...loss of profits. Each Party's..." for "...loss of profits.\n6.2 Each Party's...").
+        matches = [to_match(p, n) for p, n in _stitched_positions(norm_full, norm_q)]
+    if not matches:
+        return None
     for m in matches:
         if prefer_ranges and any(a <= m.start < b for a, b in prefer_ranges):
             return m
     return matches[0]
+
+
+def _all_positions(haystack: str, needle: str) -> list[int]:
+    positions: list[int] = []
+    pos = haystack.find(needle)
+    while pos != -1:
+        positions.append(pos)
+        pos = haystack.find(needle, pos + 1)
+    return positions
+
+
+_SENTENCE_END = re.compile(r"(?<=[.;:])\s+")
+# The ONLY text allowed between two quoted sentences: a clause number such as "6.2", "(b)", "iii.".
+# Letters and roman numerals need brackets or a dot, so a real word like "a" or "i" never counts.
+_CLAUSE_NUMBER_GAP = re.compile(r"^ ?(?:\(?\d{1,3}(?:\.\d{1,3})*[.)]? |\(?(?:[a-z]|[ivx]{1,5})[.)] )?$")
+
+
+def _stitched_positions(norm_full: str, norm_q: str) -> list[tuple[int, int]]:
+    """Match the quote sentence by sentence, allowing only a clause number between sentences.
+
+    Returns (start, length) spans in `norm_full`; the span includes the skipped clause numbers,
+    so the quote shown is still the contract's own continuous text.
+    """
+    sentences = [s for s in _SENTENCE_END.split(norm_q) if s]
+    if len(sentences) < 2:
+        return []
+    spans = []
+    for start in _all_positions(norm_full, sentences[0]):
+        end = start + len(sentences[0])
+        for sentence in sentences[1:]:
+            nxt = norm_full.find(sentence, end)
+            if nxt == -1 or not _CLAUSE_NUMBER_GAP.match(norm_full[end:nxt]):
+                break
+            end = nxt + len(sentence)
+        else:
+            spans.append((start, end - start))
+    return spans
 
 
 _QUOTED = re.compile(r'"([^"\n]{%d,})"|“([^”\n]{%d,})”' % (MIN_QUOTE_CHARS, MIN_QUOTE_CHARS))

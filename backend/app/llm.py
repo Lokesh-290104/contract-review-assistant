@@ -1,8 +1,9 @@
 """AI calls: embeddings, one-shot completions and streamed completions.
 
-`OpenRouterClient` talks to OpenRouter's OpenAI-compatible API. Free models have
-per-minute and per-day limits, so 429/502/503 answers are retried with backoff
-(honouring `Retry-After`), and then surface as `RateLimited` with a plain message.
+`OpenAICompatClient` talks to any OpenAI-compatible API. Two providers are set up:
+Google Gemini (default) and OpenRouter. Free tiers have per-minute and per-day
+limits, so 429/502/503 answers are retried with backoff (honouring `Retry-After`),
+and then surface as `RateLimited` with a plain message.
 """
 
 import json
@@ -37,21 +38,39 @@ RATE_LIMIT_MESSAGE = (
 )
 
 
-class OpenRouterClient:
+PROVIDERS = {
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "key_name": "GEMINI_API_KEY",
+        # Keep "thinking" to a minimum: copying a clause needs no long reasoning.
+        "thinking_off": {"reasoning_effort": "low"},
+        "embed_dimensions": True,  # Gemini can return shorter vectors (we ask for EMBED_DIM)
+    },
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_name": "OPENROUTER_API_KEY",
+        "thinking_off": {"reasoning": {"enabled": False}},
+        "embed_dimensions": False,
+    },
+}
+
+
+class OpenAICompatClient:
     RETRY_STATUSES = {429, 502, 503}
 
     def __init__(self, settings: Settings, max_tries: int = 4):
-        if not settings.openrouter_api_key:
-            raise AIError("OPENROUTER_API_KEY is not set. Add it to your .env file.")
+        if settings.ai_provider not in PROVIDERS:
+            raise AIError(f"AI_PROVIDER must be one of {', '.join(PROVIDERS)}.")
+        self.provider = PROVIDERS[settings.ai_provider]
+        key = settings.gemini_api_key if settings.ai_provider == "gemini" else settings.openrouter_api_key
+        if not key:
+            raise AIError(f"{self.provider['key_name']} is not set. Add it to your .env file.")
         self.s = settings
         self.max_tries = max_tries
         self.http = httpx.Client(
-            base_url=settings.openrouter_base_url,
+            base_url=self.provider["base_url"],
             timeout=httpx.Timeout(120.0, connect=10.0),
-            headers={
-                "Authorization": f"Bearer {settings.openrouter_api_key}",
-                "X-Title": "Contract Review Assistant",
-            },
+            headers={"Authorization": f"Bearer {key}"},
         )
 
     # --- helpers -----------------------------------------------------------
@@ -107,7 +126,10 @@ class OpenRouterClient:
         size = max(1, self.s.embed_batch_size)
         for i in range(0, len(texts), size):
             batch = texts[i : i + size]
-            body = self._post("/embeddings", {"model": self.s.embed_model, "input": batch})
+            payload: dict = {"model": self.s.embed_model, "input": batch}
+            if self.provider["embed_dimensions"]:
+                payload["dimensions"] = self.s.embed_dim
+            body = self._post("/embeddings", payload)
             data = sorted(body.get("data", []), key=lambda d: d.get("index", 0))
             if len(data) != len(batch):
                 raise AIError("The embedding model returned the wrong number of vectors.")
@@ -120,10 +142,10 @@ class OpenRouterClient:
             "messages": messages,
             "temperature": 0,
             "max_tokens": max_tokens,
-            # The suggested free models "think" before answering. Thinking used up the whole
-            # token budget (empty answers) and delayed the first streamed word, so it is off:
+            # Free models "think" before answering. Thinking used up the whole token budget
+            # (empty answers) and delayed the first streamed word, so it is turned off/low:
             # the task is copying a clause, not solving a puzzle.
-            "reasoning": {"enabled": False},
+            **self.provider["thinking_off"],
         }
 
     def complete(self, messages: list[Message], max_tokens: int = 1000) -> str:
@@ -172,8 +194,8 @@ class OpenRouterClient:
 
 
 def _raise_if_daily_limit(r: httpx.Response) -> None:
-    """OpenRouter free accounts get a fixed number of requests per day. Say so plainly, with the reset time."""
-    if r.status_code != 429 or "per-day" not in r.text:
+    """Free tiers allow a fixed number of requests per day. Say so plainly, with the reset time if known."""
+    if r.status_code != 429 or not any(s in r.text for s in ("per-day", "PerDay", "per day")):
         return
     message = "The free AI model's daily request limit is used up."
     try:
@@ -188,6 +210,8 @@ def _raise_if_daily_limit(r: httpx.Response) -> None:
 def _error_text(r: httpx.Response) -> str:
     try:
         body = r.json()
+        if isinstance(body, list) and body:  # Gemini wraps errors in a list
+            body = body[0]
         err = body.get("error", body)
         return str(err.get("message", err)) if isinstance(err, dict) else str(err)
     except Exception:  # noqa: BLE001
@@ -202,7 +226,7 @@ _client: AIClient | None = None
 def get_ai() -> AIClient:
     global _client
     if _client is None:
-        _client = OpenRouterClient(get_settings())
+        _client = OpenAICompatClient(get_settings())
     return _client
 
 

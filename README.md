@@ -13,7 +13,7 @@ chat answers questions from the contract only, quotes the clause, and streams th
 
 ## Contents
 1. [Quick start (Docker)](#1-quick-start-docker)
-2. [Setup: Clerk and OpenRouter keys](#2-setup-clerk-and-openrouter-keys)
+2. [Setup: Clerk and AI keys](#2-setup-clerk-and-ai-keys)
 3. [Run without Docker](#3-run-without-docker)
 4. [Tests and evaluation](#4-tests-and-evaluation)
 5. [Stack and why](#5-stack-and-why)
@@ -47,7 +47,7 @@ Open **http://localhost:5173**. Compose starts three containers:
 
 The tables are created when the API starts.
 
-## 2. Setup: Clerk and OpenRouter keys
+## 2. Setup: Clerk and AI keys
 
 All secrets go in **`.env`** in the repo root. It is git-ignored. Only `.env.example` is committed.
 
@@ -60,15 +60,21 @@ All secrets go in **`.env`** in the repo root. It is git-ignored. Only `.env.exa
 4. Keep `CLERK_AUTHORIZED_PARTIES=http://localhost:5173`. If you serve the frontend from another origin, add it here,
    comma-separated.
 
-### Create the OpenRouter key (free models need no payment)
-1. Sign up at <https://openrouter.ai>, then open **Keys → Create key**.
-2. Put it in `OPENROUTER_API_KEY`.
-3. Check the current free models at <https://openrouter.ai/models?q=free>. The defaults are:
-   - `CHAT_MODEL=nvidia/nemotron-3-ultra-550b-a55b:free` (alternative: `google/gemma-4-31b-it:free`)
-   - `EMBED_MODEL=nvidia/nemotron-3.5-embed-1b:free`, `EMBED_DIM=2048`
+### Create the Gemini key (default AI provider, free tier)
+1. Open <https://aistudio.google.com/apikey> and sign in with a Google account.
+2. Click **Create API key** (let it create a project if asked) and copy the key.
+3. Put it in `GEMINI_API_KEY`. Keep `AI_PROVIDER=gemini` and the defaults:
+   - `CHAT_MODEL=gemini-3.5-flash-lite`
+   - `EMBED_MODEL=gemini-embedding-001`, `EMBED_DIM=1536`
 
-   If you switch to an embedding model with another vector size, change `EMBED_DIM` and start with an empty
-   database (`docker compose down -v`).
+### Or use OpenRouter (the brief's suggestion)
+1. Sign up at <https://openrouter.ai>, then open **Keys → Create key**, and put it in `OPENROUTER_API_KEY`.
+2. Set `AI_PROVIDER=openrouter`, `CHAT_MODEL=nvidia/nemotron-3-ultra-550b-a55b:free`,
+   `EMBED_MODEL=nvidia/nemotron-3.5-embed-1b:free` and `EMBED_DIM=2048`.
+   (Check the current free list at <https://openrouter.ai/models?q=free>.)
+
+`EMBED_DIM` must match the database. When you change it, start with an empty database (`docker compose down -v`, or
+delete `.localdb` for the local run).
 
 ### Which key goes where
 
@@ -77,7 +83,18 @@ All secrets go in **`.env`** in the repo root. It is git-ignored. Only `.env.exa
 | `VITE_CLERK_PUBLISHABLE_KEY` | frontend (build time) | Clerk's sign-in UI and session tokens |
 | `CLERK_SECRET_KEY` | backend | to download Clerk's public signing keys (JWKS) and verify tokens |
 | `CLERK_AUTHORIZED_PARTIES` | backend | token's `azp` must be one of these origins |
-| `OPENROUTER_API_KEY` | backend only | chat + embeddings. It never reaches the browser |
+| `GEMINI_API_KEY` (or `OPENROUTER_API_KEY`) | backend only | chat + embeddings. It never reaches the browser |
+
+### Why Gemini instead of OpenRouter (the brief says to tell you why)
+I built and tested the app on OpenRouter's suggested free models first (eval: 14/16). The OpenRouter free tier allows
+**50 free-model requests per day** per account, and one contract review uses about 10. Testing used up the day's
+limit, which would also block a reviewer or a demo. Gemini's free tier has its own, larger per-model quota (see
+AI Studio → Usage & limits), and `gemini-3.5-flash-lite` answered review prompts in about 1 s. Both providers speak
+the OpenAI-compatible API, so the
+switch is configuration (`llm.PROVIDERS`), and OpenRouter still works with `AI_PROVIDER=openrouter`.
+
+Note: on Google's free tier, Google may use prompts to improve its products. That is fine for sample contracts. For
+real client contracts, use a paid tier or another provider.
 
 
 ## 3. Run without Docker
@@ -108,7 +125,7 @@ network and no accounts. They cover:
 - the quote check (exact match, whitespace/quote-mark tolerance, rejected paraphrases and ellipses);
 - retrieval scoring and the risk rules;
 - Clerk token checks (bad signature, expired, wrong `azp`, no token);
-- the OpenRouter client (429 retry, batching, SSE parsing), with the HTTP layer mocked;
+- the AI client for both providers (429 retry, daily-limit message, batching, SSE parsing), with the HTTP layer mocked;
 - upload limits and file types;
 - the full review pipeline;
 - a made-up quote turning into `unclear`;
@@ -120,22 +137,28 @@ network and no accounts. They cover:
 checklist item. The NDA deliberately has no payment, liability-cap or auto-renewal clause, to test honest "not found" answers.
 
 ```bash
-.venv/Scripts/python eval/run_eval.py          # needs OPENROUTER_API_KEY in .env
+.venv/Scripts/python eval/run_eval.py          # uses the AI provider set in .env
 ```
 
 An item counts as correct only if the status matches **and**, for found items, the verified quote contains the
 expected phrase. The script prints a PASS/FAIL table and the score, and saves the details to `eval/results.json`.
 
-**Result** with `nvidia/nemotron-3-ultra-550b-a55b:free` and `nvidia/nemotron-3.5-embed-1b:free`: **14 / 16 items correct
-(88%)**. All 3 "not found" items in the NDA were correctly reported as not found. Both misses were `unclear`, not
-wrong answers:
-- once, the model's termination quote did not match the contract word for word, so the quote check marked it unclear;
-- in another run, the governing-law answer could not be read as JSON.
+**Results:**
 
-Both items passed in the other runs.
+| Models | Score |
+|---|---|
+| Gemini `gemini-3.5-flash-lite` + `gemini-embedding-001` (default) | **15 / 16 (94%)** |
+| OpenRouter `nemotron-3-ultra-550b-a55b:free` + `nemotron-3.5-embed-1b:free` | 14 / 16 (88%) |
 
-The first run scored 5/16. The free model "thinks" before answering, used up its whole token budget on thinking, and
-returned an empty answer. The eval caught this, and the fix (thinking turned off, see section 7) took it to 14/16.
+All 3 "not found" items in the NDA were correctly reported as not found by both. The one Gemini miss is Payment
+terms: the model quoted the monthly fee clause, a fair answer, but the eval expects the "thirty (30) days" due-date
+clause. I kept the strict expectation rather than loosen it to fit the result.
+
+What the eval caught along the way:
+- **5/16 on the first run.** The free model "thinks" before answering. It spent its whole token budget thinking and
+  returned an empty answer. Fix: thinking is turned off or kept low (section 7).
+- **Quotes that skip a clause number.** Models often join two sub-clauses and drop the number between them. The quote
+  check marked these unclear, so I added the narrow rule described in section 8.
 
 ## 5. Stack and why
 
@@ -146,7 +169,7 @@ returned an empty answer. The eval caught this, and the fix (thinking turned off
 | ORM | SQLAlchemy 2 (sync) + psycopg 3 | Sync code is easier to read and explain. The slow work (parsing, AI calls) runs in a worker pool, not the request thread. |
 | Auth | **Clerk** (`@clerk/clerk-react` + backend JWT check with PyJWT) | Required by the brief. Checking the token by hand with JWKS makes the security path explicit and testable. |
 | Frontend | **React 18 + TypeScript + Vite** | Fast dev loop, typed API layer, no heavy framework needed for 2 screens. Plain CSS, responsive down to phones. |
-| AI | **OpenRouter** free models (OpenAI-compatible API) | Encouraged by the brief, free. Models are set in `.env`, so any OpenRouter model (including Claude models) can be used without code changes. |
+| AI | **Gemini** free tier (default) or **OpenRouter** free models, both through the OpenAI-compatible API | Free. One small client works with both, so the provider and models are `.env` settings. Why Gemini is the default: section 2. |
 | Run | Docker Compose (db, api, web/nginx) | One command. nginx serves the built app and proxies `/api` with buffering off so streaming stays smooth. |
 
 ## 6. Architecture
@@ -192,7 +215,7 @@ Code map (`backend/app/`):
 | `review.py` | pipeline |
 | `chat.py` | streamed chat |
 | `risk.py` | "needs attention" rules |
-| `llm.py` | OpenRouter client with retries |
+| `llm.py` | AI client (Gemini or OpenRouter) with retries |
 | `worker.py` | background pool and restart recovery |
 
 Frontend (`frontend/src/`):
@@ -249,9 +272,10 @@ embeddings there. Embeddings catch unusual wording ("Ending the Agreement" inste
 - It must return `not_found` when nothing covers the item.
 - The quote must be one passage copied character for character, with no "…", and one short summary goes with it.
 - Temperature is 0 and the output is JSON only.
-- The model's "thinking" mode is turned off (`reasoning: {enabled: false}`). Copying a clause needs no long
-  reasoning. With thinking on, the free model spent all its tokens thinking and returned empty answers, and chat took
-  about 40 s before the first word appeared instead of about 5 s.
+- The model's "thinking" mode is turned off (OpenRouter: `reasoning: {enabled: false}`) or kept low (Gemini:
+  `reasoning_effort: low`). Copying a clause needs no long reasoning. With thinking on, the free model spent all its
+  tokens thinking and returned empty answers, and chat took about 40 s before the first word appeared instead of
+  about 5 s.
 
 Each item gets its own call, so a busy model or a bad answer only affects that one item.
 
@@ -269,6 +293,12 @@ Each item gets its own call, so a busy model or a bad answer only affects that o
    A character map keeps track of the original positions.
 3. Search for the quote in the **whole contract text**. If it appears more than once, prefer a match inside the
    clauses the model was shown.
+   - **One narrow exception:** models often join two sub-clauses and drop the clause number between them
+     (`…loss of profits. Each Party's…` for `…loss of profits.⏎6.2 Each Party's…`). If the full quote is not found,
+     each sentence is checked on its own. The quote is accepted only if every sentence is found word for word, in
+     order, and the only text between two sentences is a clause number (`6.2`, `(b)`, `iii.`). The quote shown is
+     then the contract's own continuous text, including the `6.2`. Anything else in the gap, even one word, makes
+     the item unclear.
 4. **Found:** the stored quote is the **contract's own text** for that span, never the model's copy. Page and section
    are worked out from the match position (page offsets and chunk ranges), not taken from the model.
    **Not found:** the item becomes **`unclear`**, no quote is shown, and a note explains why. In chat, unverified
@@ -310,7 +340,7 @@ becomes `unclear`.
 | POST | `/api/contracts/{id}/chat` | ask; the answer streams as Server-Sent Events: `user`, `token`…, `done` (with citations) or `error` |
 
 **Errors** are JSON `{"detail": "plain message"}`. In particular:
-- An OpenRouter 429 or 503 is retried with backoff (honouring `Retry-After`). If it still fails, the user sees "The
+- A 429 or 503 from the AI provider is retried with backoff (honouring `Retry-After`). If it still fails, the user sees "The
   free AI model is rate-limited or busy right now. Please wait a minute and try again."
 - During a review, the contract is marked **failed** with that message and a **Retry** button. The chunk embeddings
   are kept, so a retry does not embed them again.
@@ -325,9 +355,9 @@ becomes `unclear`.
 - **Scanned PDFs** (images, no text layer) are rejected with a clear message. OCR is out of scope.
 - **Review runs once, at upload.** The user can re-run it with Retry after a failure.
 - **"Unclear"** is used both when the model says the clause is ambiguous and when its quote cannot be verified.
-- **Embedding dimensions:** `nvidia/nemotron-3.5-embed-1b` has 2,048 dimensions, which is more than pgvector's
-  2,000-dimension HNSW index limit for the `vector` type. Search is always limited to one contract (tens to hundreds
-  of rows), so an exact scan is fast and no ANN index is needed.
+- **Embedding dimensions:** Gemini embeddings are requested at 1,536 dimensions (`EMBED_DIM`); OpenRouter's
+  `nemotron-3.5-embed-1b` returns 2,048. No ANN index is used: search is always limited to one contract (tens to
+  hundreds of rows), so an exact scan is fast.
 
 ## 12. Known limitations and what I would improve
 
@@ -341,10 +371,10 @@ becomes `unclear`.
 - Docker Compose is written but I could not run Docker on my build machine. I tested the same stack locally with
   `scripts/run_local.py` (real Postgres + pgvector via pgserver).
 - No schema migrations (tables are created at start-up). With more time I would use Alembic.
-- **OpenRouter free accounts get 50 free-model requests per day** (1,000/day once the account has $10 of credit).
-  One review uses about 10 requests (1–2 embedding batches + 8 checklist calls), and one chat question uses 2. When
-  the daily limit is hit, the app says so with the reset time instead of retrying. With more time I would cut each
-  review to fewer calls by asking about several checklist items per call.
+- **Free tiers have daily request limits** (OpenRouter: 50 per day, which is why Gemini is the default). One review
+  uses about 10 requests (1–2 embedding batches + 8 checklist calls), and one chat question uses 2. When a daily limit
+  is hit, the app says so plainly instead of retrying. With more time I would cut each review to fewer calls by
+  asking about several checklist items per call.
 
 **With more time:**
 - Compare two versions of a contract (bonus 1).
@@ -363,4 +393,4 @@ becomes `unclear`.
   - running the tests and fixing failures.
 - I reviewed every file, chose the design (clause chunking, hybrid retrieval, backend quote check, 404 for other users'
   data) and tested the app by hand.
-- The app itself uses OpenRouter free models at runtime (see section 5).
+- The app itself uses Gemini free-tier models at runtime (see sections 2 and 5).
