@@ -1,0 +1,22 @@
+{
+  "services_agreement.txt": {
+    "parties": {"status": "found", "quote_contains": "Brightline Software Private Limited"},
+    "term": {"status": "found", "quote_contains": "1 January 2026"},
+    "payment": {"status": "found", "quote_contains": "thirty (30) days"},
+    "termination": {"status": "found", "quote_contains": "ninety (90) days"},
+    "liability": {"status": "found", "quote_contains": "shall not exceed"},
+    "confidentiality": {"status": "found", "quote_contains": "Confidential Information"},
+    "governing_law": {"status": "found", "quote_contains": "laws of India"},
+    "auto_renewal": {"status": "found", "quote_contains": "automatically renew"}
+  },
+  "mutual_nda.txt": {
+    "parties": {"status": "found", "quote_contains": "Orion Lighting Inc."},
+    "term": {"status": "found", "quote_contains": "two (2) years"},
+    "payment": {"status": "not_found"},
+    "termination": {"status": "found", "quote_contains": "fourteen (14) days"},
+    "liability": {"status": "not_found"},
+    "confidentiality": {"status": "found", "quote_contains": "strict confidence"},
+    "governing_law": {"status": "found", "quote_contains": "State of New York"},
+    "auto_renewal": {"status": "not_found"}
+  }
+}
